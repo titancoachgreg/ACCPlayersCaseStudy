@@ -1,0 +1,83 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+setwd("C:/Users/nateb/OneDrive/Documents/ACCPlayerCase")
+
+```{r}
+#Chi Squared test
+library(dplyr)
+
+data = read.csv("C:/Users/nateb/OneDrive/Documents/ACCPlayerCase/ACCPlayers.csv")
+
+# filter the data frame to only include the school state and the player's hometown state
+data_filtered = data %>%
+  select(`School.State`, State)
+
+# tabulate data for chi sqaured
+chi_table = table(data_filtered$School.State, data_filtered$State)
+
+# chi squared test for relationship between Hometown State and School State
+chi_squared_test = chisq.test(chi_table)
+chi_squared_test
+```
+
+```{r}
+library(ggplot2)
+library(pROC)
+library(dplyr)
+library(tibble)
+
+data <- read.csv("C:/Users/nateb/OneDrive/Documents/ACCPlayerCase/Player_School_Distances.csv")
+
+# set the radius distance parameter (100 miles as baseline) and create a binary column for Within_Radius
+radius_threshold <- 100
+data <- data %>%
+  mutate(Within_Radius = ifelse(Distance_mi <= radius_threshold, 1, 0),
+         School = factor(School))  # Factorize the School variable for releveling
+
+# set Duke as the reference school (they serve as a good baseline given their low in-state concentration)
+data$School <- relevel(data$School, ref = "Duke")
+
+# logistic regression on distance to school
+model <- glm(Within_Radius ~ School, data = data, family = binomial)
+summary(model)
+
+# probabilities for each school and create prediction data for plotting
+prediction_data <- data.frame(School = levels(data$School),
+                              Predicted_Probability = predict(model, newdata = data.frame(School = levels(data$School)), type = "response"))
+
+# plot predicted probabilities using ggplot2
+ggplot(prediction_data, aes(x = School, y = Predicted_Probability)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(title = "Probability of Being Within 100 Miles for Each School",
+       x = "School", 
+       y = "Predicted Probability") +
+  theme_minimal() +
+  coord_flip()  # Horizontal bar plot
+
+# predict the probabilities for the full dataset
+data$Predicted_Probability <- predict(model, type = "response")
+
+# calculate the ROC curve and AUC
+roc_curve <- roc(data$Within_Radius, data$Predicted_Probability)
+auc_value <- auc(roc_curve)
+
+# plot the ROC curve with AUC
+plot(roc_curve, col = "blue", main = "ROC Curve for Logistic Regression Model")
+abline(a = 0, b = 1, lty = 2, col = "gray")  # Diagonal reference line for random guessing
+legend("bottomright", legend = paste("AUC =", round(auc_value, 3)), bty = "n", col = "blue")
+
+# create confusion matrix
+predicted_classes <- ifelse(data$Predicted_Probability > 0.5, 1, 0)  # Threshold at 0.5
+confusion_matrix <- table(Predicted = predicted_classes, Actual = data$Within_Radius)
+
+# convert the confusion matrix to a tibble for easier viewing and manipulation
+confusion_tibble <- as_tibble(as.data.frame(confusion_matrix))
+print(confusion_tibble)  # Print the confusion matrix as a tibble
+
+# calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", round(accuracy, 3)))
+```
